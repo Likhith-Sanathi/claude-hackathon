@@ -9,11 +9,23 @@ export type DuckState = 'idle' | 'listening' | 'thinking' | 'speaking'
 
 interface DuckProps {
   state: DuckState
+  color?: string
 }
 
-function DuckModel({ state }: { state: DuckState }) {
+function DuckModel({ state, color }: { state: DuckState; color?: string }) {
   const groupRef = useRef<THREE.Group>(null)
   const { scene } = useGLTF('/duck.glb')
+
+  // Override material color when color prop is provided
+  useEffect(() => {
+    if (!color) return
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const mat = child.material as THREE.MeshStandardMaterial
+        mat.color.set(color)
+      }
+    })
+  }, [color, scene])
 
   useFrame((_, delta) => {
     if (!groupRef.current) return
@@ -39,7 +51,7 @@ useGLTF.preload('/duck.glb')
 
 const CANVAS_SIZE = 800
 
-export default function Duck({ state }: DuckProps) {
+export default function Duck({ state, color }: DuckProps) {
   const elRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<number>(0)
 
@@ -149,7 +161,7 @@ export default function Duck({ state }: DuckProps) {
           <directionalLight position={[3, 5, 4]} intensity={1.2} />
           <directionalLight position={[-2, 3, -2]} intensity={0.3} color="#ffe0a0" />
           <pointLight position={[0, -2, 3]} intensity={0.3} color="#F5A623" />
-          <DuckModel state={state} />
+          <DuckModel state={state} color={color} />
           <Environment preset="city" />
         </Canvas>
       </div>

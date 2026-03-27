@@ -27,9 +27,9 @@ export default function Starfield({ count = 200 }: { count?: number }) {
       starsRef.current = Array.from({ length: count }, () => ({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
-        size: Math.random() * 1.8 + 0.3,
-        opacity: Math.random() * 0.6 + 0.2,
-        twinkleSpeed: Math.random() * 0.8 + 0.3,
+        size: Math.random() * 2.5 + 0.5,
+        opacity: Math.random() * 0.7 + 0.3,
+        twinkleSpeed: Math.random() * 2.5 + 0.5,
         twinkleOffset: Math.random() * Math.PI * 2,
       }))
     }
@@ -44,8 +44,8 @@ export default function Starfield({ count = 200 }: { count?: number }) {
       const t = Date.now() / 1000
 
       for (const star of starsRef.current) {
-        const twinkle = 0.5 + 0.5 * Math.sin(t * star.twinkleSpeed + star.twinkleOffset)
-        const alpha = star.opacity * twinkle
+        const twinkle = Math.pow(0.5 + 0.5 * Math.sin(t * star.twinkleSpeed + star.twinkleOffset), 2)
+        const alpha = star.opacity * (0.15 + 0.85 * twinkle)
         ctx.beginPath()
         ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2)
         ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
