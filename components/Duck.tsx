@@ -1,227 +1,158 @@
 'use client'
 
-import { motion, useAnimationControls } from 'framer-motion'
-import { useEffect } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { useGLTF, Environment } from '@react-three/drei'
+import * as THREE from 'three'
 
 export type DuckState = 'idle' | 'listening' | 'thinking' | 'speaking'
 
 interface DuckProps {
   state: DuckState
-  size?: number
 }
 
-export default function Duck({ state, size = 120 }: DuckProps) {
-  const controls = useAnimationControls()
+function DuckModel({ state }: { state: DuckState }) {
+  const groupRef = useRef<THREE.Group>(null)
+  const { scene } = useGLTF('/duck.glb')
 
-  useEffect(() => {
-    if (state === 'idle') {
-      controls.start({
-        y: [0, -4, 0],
-        transition: {
-          duration: 3.5,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        },
-      })
-    } else if (state === 'listening') {
-      controls.start({
-        y: [0, -6, 0],
-        scale: [1, 1.03, 1],
-        transition: {
-          duration: 1.8,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        },
-      })
-    } else if (state === 'thinking') {
-      controls.start({
-        rotate: [-2, 2, -2],
-        transition: {
-          duration: 1.2,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        },
-      })
-    } else if (state === 'speaking') {
-      controls.start({
-        y: [0, -8, 0, -4, 0],
-        scale: [1, 1.05, 1, 1.03, 1],
-        transition: {
-          duration: 0.8,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        },
-      })
-    }
-  }, [state, controls])
-
-  const isActive = state === 'listening' || state === 'speaking'
-  const isThinking = state === 'thinking'
+  useFrame((_, delta) => {
+    if (!groupRef.current) return
+    // Continuous tumble on all axes — like floating in space
+    groupRef.current.rotation.y += delta * 0.6
+    groupRef.current.rotation.x += delta * 0.15
+    groupRef.current.rotation.z += delta * 0.1
+  })
 
   return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-      {/* Outer glow ring */}
-      <motion.div
-        className="absolute rounded-full"
-        style={{
-          width: size * 1.6,
-          height: size * 1.6,
-          background: 'radial-gradient(circle, rgba(245,166,35,0.08) 0%, transparent 70%)',
-        }}
-        animate={{
-          opacity: isActive ? [0.5, 1, 0.5] : isThinking ? [0.3, 0.6, 0.3] : [0.2, 0.4, 0.2],
-          scale: isActive ? [0.95, 1.05, 0.95] : [0.98, 1.02, 0.98],
-        }}
-        transition={{
-          duration: isActive ? 1.5 : 3,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+    <group ref={groupRef}>
+      <primitive
+        object={scene}
+        scale={0.24}
+        position={[0, 0.2, 0]}
+        rotation={[0, Math.PI, 0]}
       />
+    </group>
+  )
+}
 
-      {/* Inner pulse ring */}
-      {isActive && (
-        <motion.div
-          className="absolute rounded-full border border-amber-400/20"
-          style={{ width: size * 1.2, height: size * 1.2 }}
-          animate={{
-            scale: [1, 1.2, 1],
-            opacity: [0.6, 0, 0.6],
-          }}
-          transition={{
-            duration: 2,
-            repeat: Infinity,
-            ease: 'easeOut',
-          }}
-        />
-      )}
+useGLTF.preload('/duck.glb')
 
-      {/* Duck SVG */}
-      <motion.div animate={controls} style={{ originX: '50%', originY: '80%' }}>
-        <svg
-          width={size * 0.85}
-          height={size * 0.85}
-          viewBox="0 0 100 100"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          {/* Body */}
-          <motion.ellipse
-            cx="50"
-            cy="65"
-            rx="32"
-            ry="24"
-            fill="#F5A623"
-            animate={{
-              fill: isActive ? ['#F5A623', '#f7b83a', '#F5A623'] : '#F5A623',
-            }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          />
+const CANVAS_SIZE = 800
 
-          {/* Body shading */}
-          <ellipse cx="50" cy="68" rx="28" ry="18" fill="rgba(0,0,0,0.12)" />
-          <ellipse cx="44" cy="60" rx="16" ry="10" fill="rgba(255,255,255,0.08)" />
+export default function Duck({ state }: DuckProps) {
+  const elRef = useRef<HTMLDivElement>(null)
+  const frameRef = useRef<number>(0)
 
-          {/* Wing */}
-          <ellipse
-            cx="62"
-            cy="67"
-            rx="14"
-            ry="9"
-            fill="#e6981f"
-            transform="rotate(-15 62 67)"
-          />
+  // Track the CENTER of the duck, not top-left
+  const centerRef = useRef({ x: 0, y: 0 })
+  const velRef = useRef({ x: 0, y: 0 })
+  const targetRef = useRef({ x: 0, y: 0 })
 
-          {/* Neck */}
-          <path
-            d="M 42 48 Q 38 38 44 30 Q 46 26 50 25 Q 54 24 56 28 Q 60 36 56 46 Q 54 50 50 51 Q 46 52 42 48 Z"
-            fill="#F5A623"
-          />
+  const pickTarget = useCallback(() => {
+    // Targets can be anywhere on screen with some padding
+    const pad = 60
+    targetRef.current = {
+      x: pad + Math.random() * (window.innerWidth - pad * 2),
+      y: pad + Math.random() * (window.innerHeight - pad * 2),
+    }
+  }, [])
 
-          {/* Head */}
-          <motion.circle
-            cx="52"
-            cy="24"
-            r="16"
-            fill="#F5A623"
-            animate={{
-              fill: isActive ? ['#F5A623', '#f7b83a', '#F5A623'] : '#F5A623',
-            }}
-            transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
-          />
+  const animate = useCallback(() => {
+    const c = centerRef.current
+    const vel = velRef.current
+    const target = targetRef.current
+    const w = window.innerWidth
+    const h = window.innerHeight
+    const t = Date.now() / 1000
 
-          {/* Head shading */}
-          <circle cx="48" cy="20" r="8" fill="rgba(255,255,255,0.07)" />
+    // Gravity toward target
+    const dx = target.x - c.x
+    const dy = target.y - c.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
 
-          {/* Eye */}
-          <circle cx="58" cy="20" r="4" fill="#0a0a0a" />
-          <circle cx="59.5" cy="18.5" r="1.2" fill="rgba(255,255,255,0.7)" />
+    const gravity = 0.008
+    if (dist > 1) {
+      vel.x += (dx / dist) * gravity
+      vel.y += (dy / dist) * gravity
+    }
 
-          {/* Beak */}
-          <motion.path
-            d="M 64 24 Q 74 22 73 26 Q 72 30 62 28 Z"
-            fill="#e08800"
-            animate={
-              state === 'speaking'
-                ? { d: ['M 64 24 Q 74 22 73 26 Q 72 30 62 28 Z', 'M 64 25 Q 74 21 73 27 Q 72 32 62 29 Z', 'M 64 24 Q 74 22 73 26 Q 72 30 62 28 Z'] }
-                : {}
-            }
-            transition={{ duration: 0.4, repeat: Infinity }}
-          />
+    // Organic drift
+    vel.x += Math.sin(t * 0.7) * 0.003 + Math.sin(t * 1.3 + 2) * 0.002
+    vel.y += Math.cos(t * 0.5) * 0.003 + Math.cos(t * 1.1 + 5) * 0.002
 
-          {/* Beak highlight */}
-          <path d="M 65 24 Q 71 22 72 25 Q 69 23 65 24 Z" fill="rgba(255,255,255,0.2)" />
+    // Light damping
+    vel.x *= 0.995
+    vel.y *= 0.995
 
-          {/* Feet */}
-          <ellipse cx="40" cy="87" rx="10" ry="4" fill="#e08800" transform="rotate(-10 40 87)" />
-          <ellipse cx="60" cy="87" rx="10" ry="4" fill="#e08800" transform="rotate(10 60 87)" />
+    // Max speed
+    const maxSpeed = 1.5
+    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y)
+    if (speed > maxSpeed) {
+      vel.x = (vel.x / speed) * maxSpeed
+      vel.y = (vel.y / speed) * maxSpeed
+    }
 
-          {/* Thinking dots */}
-          {isThinking && (
-            <>
-              <motion.circle
-                cx="78"
-                cy="12"
-                r="2"
-                fill="#F5A623"
-                animate={{ opacity: [0, 1, 0], scale: [0.5, 1, 0.5] }}
-                transition={{ duration: 1.2, repeat: Infinity, delay: 0 }}
-              />
-              <motion.circle
-                cx="85"
-                cy="7"
-                r="2.5"
-                fill="#F5A623"
-                animate={{ opacity: [0, 1, 0], scale: [0.5, 1, 0.5] }}
-                transition={{ duration: 1.2, repeat: Infinity, delay: 0.3 }}
-              />
-              <motion.circle
-                cx="92"
-                cy="2"
-                r="3"
-                fill="#F5A623"
-                animate={{ opacity: [0, 1, 0], scale: [0.5, 1, 0.5] }}
-                transition={{ duration: 1.2, repeat: Infinity, delay: 0.6 }}
-              />
-            </>
-          )}
-        </svg>
-      </motion.div>
+    // Move center
+    c.x += vel.x
+    c.y += vel.y
 
-      {/* State label */}
-      <motion.div
-        className="absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        key={state}
+    // Bounce the CENTER off screen edges with padding
+    const pad = 40
+    if (c.x < pad) { c.x = pad; vel.x = Math.abs(vel.x) * 0.6 }
+    if (c.x > w - pad) { c.x = w - pad; vel.x = -Math.abs(vel.x) * 0.6 }
+    if (c.y < pad) { c.y = pad; vel.y = Math.abs(vel.y) * 0.6 }
+    if (c.y > h - pad) { c.y = h - pad; vel.y = -Math.abs(vel.y) * 0.6 }
+
+    // New target when close
+    if (dist < 80) pickTarget()
+
+    // Position the canvas so its center aligns with the duck center
+    if (elRef.current) {
+      const left = c.x - CANVAS_SIZE / 2
+      const top = c.y - CANVAS_SIZE / 2
+      elRef.current.style.transform = `translate(${left}px, ${top}px)`
+    }
+
+    frameRef.current = requestAnimationFrame(animate)
+  }, [pickTarget])
+
+  useEffect(() => {
+    centerRef.current = {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    }
+    const angle = Math.random() * Math.PI * 2
+    velRef.current = { x: Math.cos(angle) * 0.5, y: Math.sin(angle) * 0.5 }
+    pickTarget()
+    frameRef.current = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(frameRef.current)
+  }, [animate, pickTarget])
+
+  return (
+    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+      <div
+        ref={elRef}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: CANVAS_SIZE,
+          height: CANVAS_SIZE,
+        }}
       >
-        <span className="text-[10px] tracking-[0.2em] uppercase text-[#F5A623]/50 font-light">
-          {state === 'idle' && 'waiting'}
-          {state === 'listening' && 'listening'}
-          {state === 'thinking' && 'thinking'}
-          {state === 'speaking' && 'speaking'}
-        </span>
-      </motion.div>
+        <Canvas
+          camera={{ position: [0, 1.2, 2.5], fov: 40 }}
+          style={{ background: 'transparent' }}
+          gl={{ alpha: true, antialias: true }}
+        >
+          <ambientLight intensity={0.4} />
+          <directionalLight position={[3, 5, 4]} intensity={1.2} />
+          <directionalLight position={[-2, 3, -2]} intensity={0.3} color="#ffe0a0" />
+          <pointLight position={[0, -2, 3]} intensity={0.3} color="#F5A623" />
+          <DuckModel state={state} />
+          <Environment preset="city" />
+        </Canvas>
+      </div>
     </div>
   )
 }
