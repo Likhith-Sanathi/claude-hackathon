@@ -1,57 +1,39 @@
 import { NextRequest } from 'next/server'
 
 export async function POST(req: NextRequest) {
-  try {
-    const { text } = await req.json()
+  const { text } = await req.json()
+  if (!text || typeof text !== 'string') return new Response('Missing text', { status: 400 })
 
-    if (!text || typeof text !== 'string') {
-      return new Response('Missing text', { status: 400 })
-    }
+  const apiKey = process.env.CARTESIA_API_KEY
+  const voiceId = process.env.CARTESIA_VOICE_ID ?? 'a0e99841-438c-4a64-b679-ae501e7d6091'
 
-    const voiceId = process.env.ELEVENLABS_VOICE_ID || 'nPczCjzI2devNBz1zQrb' // Brian - calm, warm
-    const apiKey = process.env.ELEVENLABS_API_KEY
+  if (!apiKey) return new Response('Cartesia key not configured', { status: 500 })
 
-    if (!apiKey) {
-      return new Response('ElevenLabs API key not configured', { status: 500 })
-    }
+  const res = await fetch('https://api.cartesia.ai/tts/bytes', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Cartesia-Version': '2026-03-01',
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+    },
+    body: JSON.stringify({
+      model_id: 'sonic-2',
+      transcript: text,
+      voice: { mode: 'id', id: voiceId },
+      output_format: { container: 'mp3', sample_rate: 44100, bit_rate: 128000 },
+      language: 'en',
+    }),
+  })
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: 'POST',
-        headers: {
-          'xi-api-key': apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text,
-          model_id: 'eleven_turbo_v2_5',
-          voice_settings: {
-            stability: 0.6,
-            similarity_boost: 0.8,
-            style: 0.2,
-            use_speaker_boost: false,
-          },
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      const error = await response.text()
-      console.error('ElevenLabs TTS error:', error)
-      return new Response('TTS generation failed', { status: 500 })
-    }
-
-    const audioBuffer = await response.arrayBuffer()
-
-    return new Response(audioBuffer, {
-      headers: {
-        'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'no-cache',
-      },
-    })
-  } catch (error) {
-    console.error('TTS route error:', error)
-    return new Response('Internal server error', { status: 500 })
+  if (!res.ok) {
+    const error = await res.text()
+    console.error('Cartesia TTS error:', error)
+    return new Response('TTS failed', { status: res.status })
   }
+
+  const audio = await res.arrayBuffer()
+  return new Response(audio, {
+    headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-cache' },
+  })
 }

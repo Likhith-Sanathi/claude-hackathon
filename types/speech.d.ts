@@ -1,4 +1,3 @@
-// Web Speech API type declarations
 interface SpeechRecognitionEvent extends Event {
   readonly resultIndex: number
   readonly results: SpeechRecognitionResultList
@@ -27,40 +26,21 @@ interface SpeechRecognitionAlternative {
   readonly confidence: number
 }
 
-interface SpeechRecognition extends EventTarget {
+declare class SpeechRecognition extends EventTarget {
   continuous: boolean
-  grammars: SpeechGrammarList
   interimResults: boolean
   lang: string
   maxAlternatives: number
-  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null
-  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null
-  onend: ((this: SpeechRecognition, ev: Event) => void) | null
-  onstart: ((this: SpeechRecognition, ev: Event) => void) | null
-  abort(): void
+  onresult: ((event: SpeechRecognitionEvent) => void) | null
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null
+  onend: (() => void) | null
+  onstart: (() => void) | null
   start(): void
   stop(): void
-}
-
-interface SpeechGrammarList {
-  readonly length: number
-  addFromString(string: string, weight?: number): void
-  addFromURI(src: string, weight?: number): void
-  item(index: number): SpeechGrammar
-  [index: number]: SpeechGrammar
-}
-
-interface SpeechGrammar {
-  src: string
-  weight: number
-}
-
-declare var SpeechRecognition: {
-  prototype: SpeechRecognition
-  new (): SpeechRecognition
+  abort(): void
 }
 
 interface Window {
-  SpeechRecognition: typeof SpeechRecognition
-  webkitSpeechRecognition: typeof SpeechRecognition
+  SpeechRecognition: typeof SpeechRecognition | undefined
+  webkitSpeechRecognition: typeof SpeechRecognition | undefined
 }
