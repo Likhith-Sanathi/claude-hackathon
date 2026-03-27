@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Duck, { DuckState } from '@/components/Duck'
+import Starfield from '@/components/Starfield'
 import Waveform from '@/components/Waveform'
 import Transcript, { Message } from '@/components/Transcript'
 import MicButton from '@/components/MicButton'
@@ -325,6 +326,9 @@ export default function QuackPage() {
 
   return (
     <div className="grain relative min-h-screen flex flex-col overflow-hidden">
+      {/* Starfield background */}
+      <Starfield count={250} />
+
       {/* Ambient background gradient */}
       <div
         className="pointer-events-none fixed inset-0"
@@ -375,14 +379,30 @@ export default function QuackPage() {
       {/* Main layout */}
       <div className="relative z-10 flex flex-col flex-1 max-w-2xl w-full mx-auto px-4">
 
-        {/* Duck + waveform */}
+        {/* Floating 3D duck in background */}
+        <Duck state={duckState} />
+
+        {/* Centered UI controls */}
         <motion.div
-          className="flex flex-col items-center gap-10 pt-10 pb-8"
+          className="flex flex-col items-center gap-10 pt-10 pb-8 relative z-10"
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
         >
-          <Duck state={duckState} size={140} />
+          {/* State label */}
+          <motion.div
+            className="whitespace-nowrap"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            key={duckState}
+          >
+            <span className="text-[10px] tracking-[0.2em] uppercase text-[#F5A623]/50 font-light">
+              {duckState === 'idle' && 'waiting'}
+              {duckState === 'listening' && 'listening'}
+              {duckState === 'thinking' && 'thinking'}
+              {duckState === 'speaking' && 'speaking'}
+            </span>
+          </motion.div>
 
           <div className="w-full flex flex-col items-center gap-6">
             <Waveform analyser={analyser} active={duckState === 'listening'} />
