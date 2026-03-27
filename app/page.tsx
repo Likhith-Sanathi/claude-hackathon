@@ -7,8 +7,16 @@ import Starfield from '@/components/Starfield'
 import Waveform from '@/components/Waveform'
 import Transcript, { Message } from '@/components/Transcript'
 import MicButton from '@/components/MicButton'
+import TopicChips from '@/components/TopicChips'
 import { speakText, transcribeAudio } from '@/lib/voice'
 import { ConversationMessage } from '@/lib/claude'
+
+interface KnowledgeEntry {
+  id: number
+  content: string
+  source: string
+  created_at: string
+}
 
 export default function QuackPage() {
   const [duckState, setDuckState] = useState<DuckState>('idle')
@@ -19,6 +27,10 @@ export default function QuackPage() {
   const [mode, setMode] = useState<'mirror' | 'assistant'>('mirror')
   const [speechUnavailable, setSpeechUnavailable] = useState(false)
   const [textInput, setTextInput] = useState('')
+  const [topicSuggestions, setTopicSuggestions] = useState<string[]>([])
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false)
+  const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([])
+  const [newNote, setNewNote] = useState('')
 
   const modeRef = useRef<'mirror' | 'assistant'>('mirror')
   const historyRef = useRef<ConversationMessage[]>([])
@@ -32,6 +44,55 @@ export default function QuackPage() {
   useEffect(() => {
     modeRef.current = mode
   }, [mode])
+
+  const loadKnowledge = useCallback(async () => {
+    try {
+      const res = await fetch('/api/knowledge')
+      if (res.ok) setKnowledgeEntries(await res.json())
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    void loadKnowledge()
+  }, [loadKnowledge])
+
+  const addNote = useCallback(async () => {
+    const content = newNote.trim()
+    if (!content) return
+    try {
+      const res = await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      if (res.ok) {
+        const entry = await res.json()
+        setKnowledgeEntries(prev => [entry, ...prev])
+        setNewNote('')
+      }
+    } catch {}
+  }, [newNote])
+
+  const deleteNote = useCallback(async (id: number) => {
+    try {
+      await fetch(`/api/knowledge?id=${id}`, { method: 'DELETE' })
+      setKnowledgeEntries(prev => prev.filter(e => e.id !== id))
+    } catch {}
+  }, [])
+
+  const fetchTopics = useCallback((msgs: Message[]) => {
+    const recent = msgs.slice(-6).map(m => ({ role: m.role, text: m.text }))
+    fetch('/api/topics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: recent }),
+    })
+      .then(r => r.json())
+      .then((topics: string[]) => {
+        if (Array.isArray(topics) && topics.length) setTopicSuggestions(topics)
+      })
+      .catch(() => {})
+  }, [])
 
   const cleanupAudio = useCallback(() => {
     mediaRecorderRef.current = null
@@ -101,6 +162,10 @@ export default function QuackPage() {
           console.warn('TTS failed, continuing silently:', e)
         }
       }
+
+      // fire-and-forget topic extraction
+      const updatedMsgs = [...messages, userMsg, { id: duckId, role: 'duck' as const, text: fullResponse, partial: false }]
+      fetchTopics(updatedMsgs)
     } catch (e) {
       console.error('Duck call failed:', e)
       setMessages(prev => prev.filter(message => message.id !== duckId))
@@ -109,13 +174,14 @@ export default function QuackPage() {
       isDuckTurnRef.current = false
       setDuckState('idle')
     }
-  }, [])
+  }, [fetchTopics, messages])
 
   const startRecording = useCallback(async () => {
     if (isRecordingRef.current || isDuckTurnRef.current) return
     setError(null)
     setSpeechUnavailable(false)
     setPartialTranscript('')
+    setTopicSuggestions([])
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setSpeechUnavailable(true)
@@ -340,6 +406,18 @@ export default function QuackPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Knowledge button */}
+          <button
+            onClick={() => setKnowledgeOpen(o => !o)}
+            className="w-8 h-8 rounded-full border border-[#2a2a2a] flex items-center justify-center text-[#3a3632] hover:text-[#F5A623] hover:border-[#F5A623]/30 transition-colors"
+            title="Memory pool"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M12 2a5 5 0 0 1 5 5v1a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5Z" />
+              <path d="M3 20a9 9 0 0 1 18 0" />
+            </svg>
+          </button>
         </div>
       </motion.header>
 
@@ -396,7 +474,13 @@ export default function QuackPage() {
                 </button>
               </form>
             ) : (
-              <MicButton state={duckState} onPressStart={() => { void startRecording() }} onPressEnd={() => { void stopRecording() }} />
+              <div className="flex flex-col items-center gap-4">
+                <MicButton state={duckState} onPressStart={() => { void startRecording() }} onPressEnd={() => { void stopRecording() }} />
+                <TopicChips
+                  topics={topicSuggestions}
+                  onSelect={topic => { void callDuck(topic) }}
+                />
+              </div>
             )}
           </div>
         </motion.div>
@@ -412,6 +496,72 @@ export default function QuackPage() {
           <Transcript messages={messages} partialTranscript={partialTranscript} />
         </div>
       </div>
+
+      {/* Knowledge panel */}
+      <AnimatePresence>
+        {knowledgeOpen && (
+          <motion.div
+            initial={{ opacity: 0, x: 32 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 32 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="fixed top-0 right-0 h-full w-80 bg-[#0d0c0a] border-l border-[#1e1c18] flex flex-col z-50"
+          >
+            <div className="flex items-center justify-between px-5 pt-6 pb-4 border-b border-[#1e1c18]">
+              <span className="text-[10px] tracking-[0.2em] uppercase text-[#6b6660] font-light">Memory Pool</span>
+              <button onClick={() => setKnowledgeOpen(false)} className="text-[#3a3632] hover:text-[#e8e3da] transition-colors text-lg leading-none">×</button>
+            </div>
+
+            <div className="px-4 py-3 border-b border-[#1a1815]">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newNote}
+                  onChange={e => setNewNote(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void addNote() }}
+                  placeholder="Add a fact or note…"
+                  className="flex-1 bg-[#111] border border-[#2a2a2a] rounded-full px-4 py-2 text-xs text-[#e8e3da] placeholder:text-[#3a3632] font-light focus:outline-none focus:border-[#F5A623]/40 transition-colors"
+                />
+                <button
+                  onClick={() => void addNote()}
+                  disabled={!newNote.trim()}
+                  className="w-8 h-8 rounded-full bg-[#F5A623] flex items-center justify-center disabled:opacity-30 transition-opacity"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M6 1v10M1 6h10" stroke="#0a0a0a" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+              {knowledgeEntries.length === 0 ? (
+                <p className="text-[11px] text-[#2a2a2a] text-center mt-6 font-light">Nothing saved yet.</p>
+              ) : (
+                knowledgeEntries.map(entry => (
+                  <motion.div
+                    key={entry.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="group flex items-start gap-2 bg-[#111] border border-[#1e1c18] rounded-lg px-3 py-2.5"
+                  >
+                    <p className="flex-1 text-[11px] text-[#a09a94] font-light leading-relaxed">{entry.content}</p>
+                    <button
+                      onClick={() => void deleteNote(entry.id)}
+                      className="text-[#2a2a2a] hover:text-red-400/70 transition-colors opacity-0 group-hover:opacity-100 mt-0.5"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                        <path d="M1 1l10 10M11 1L1 11" />
+                      </svg>
+                    </button>
+                  </motion.div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {error && (

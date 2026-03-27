@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
+import { getAllKnowledge } from '@/lib/db'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -9,6 +10,8 @@ const PROMPTS = {
   mirror: `You are a thinking mirror. Your only job is to complete the user's incomplete thoughts — the same way autocomplete finishes a sentence, you finish an idea.
 
 You are not a solver, not a guide, not a teacher. You are the quiet voice that says the thing the user already almost knew.
+
+You have access to a web_search tool. Use it ONLY when the user asks about a specific fact, person, place, or event that you are not confident about. Even then, your response must remain 1 sentence.
 
 Rules:
 - Respond in 1 sentence maximum. Always.
@@ -34,6 +37,18 @@ Rules:
 - If you don't know something, say so plainly.
 - Match the user's tone: casual if they're casual, precise if they're precise.
 - Never refer to yourself as an AI. Just respond as a thoughtful, present voice.`,
+}
+
+function buildSystemPrompt(mode: keyof typeof PROMPTS): string {
+  const base = PROMPTS[mode]
+  try {
+    const entries = getAllKnowledge()
+    if (!entries.length) return base
+    const block = entries.map(e => `- ${e.content}`).join('\n')
+    return `${base}\n\n---\nYour memory context (facts saved by the user):\n${block}\n---`
+  } catch {
+    return base
+  }
 }
 
 const WEB_SEARCH_TOOL: Anthropic.Tool = {
@@ -113,9 +128,10 @@ export async function POST(req: NextRequest) {
       { role: 'user' as const, content: transcript },
     ]
 
-    const systemPrompt = PROMPTS[mode as keyof typeof PROMPTS] ?? PROMPTS.mirror
-    const maxTokens = mode === 'assistant' ? 400 : 150
-    const useTools = mode === 'assistant' && !!process.env.LANGSEARCH_API_KEY
+    const resolvedMode = (mode === 'assistant' ? 'assistant' : 'mirror') as keyof typeof PROMPTS
+    const systemPrompt = buildSystemPrompt(resolvedMode)
+    const maxTokens = resolvedMode === 'assistant' ? 400 : 150
+    const useTools = !!process.env.LANGSEARCH_API_KEY
 
     // --- Assistant mode: non-streaming first pass to check for tool use ---
     if (useTools) {
